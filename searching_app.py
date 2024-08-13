@@ -1,3 +1,4 @@
+#!/bin/env python3
 """
 This is the main python script for searching local documents that we have indexed into Elasticsearch.
 
@@ -12,8 +13,9 @@ from elasticsearch import Elasticsearch
 import globals
 import presentation
 import common
+import json
 
-es = Elasticsearch([globals.ES_HOST], http_auth=(globals.ES_USER, globals.ES_PASSWORD))
+es = Elasticsearch([globals.ES_HOST], http_auth=(globals.ES_USER, globals.ES_PASSWORD), timeout=30)
 app = Flask(__name__)
 
 
@@ -42,12 +44,16 @@ def my_form_post():
     except:
         # If any of the above fields are not POSTED, then don't do a "search_after"  (not paging)
         optional_search_after = ''
+        # escape quoted strings to avoid ES errors
+        # Note: currently, quoted strings _do not_ represent exact matches
+        search_text = search_text.replace('"', r'\"')  # raw string used here
 
     body = render_template("search_body.json",
                            query_string=search_text,
                            optional_search_after=optional_search_after)
 
     search_result = es.search(index=app.config['index_name'], body=body)
+
     generated_html = presentation.present_results(
         search_text=search_text,
         index_name=app.config['index_name'],

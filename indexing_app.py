@@ -1,3 +1,5 @@
+#!/bin/env python3
+
 """
 This is the main python script for indexing local html documents into Elasticsearch.
 
@@ -13,7 +15,7 @@ from elasticsearch import Elasticsearch
 from bs4 import BeautifulSoup # library for parsing html
 from bs4.element import Comment
 
-es = Elasticsearch([globals.ES_HOST], http_auth=(globals.ES_USER, globals.ES_PASSWORD))
+es = Elasticsearch([globals.ES_HOST], http_auth=(globals.ES_USER, globals.ES_PASSWORD), timeout=30)
 
 
 def extract_fields_from_html(html_body):
@@ -51,6 +53,29 @@ def extract_fields_from_html(html_body):
     }
 
 
+def is_file_supported(filename):
+    """Checks if a gifen filename has a supported extension.
+    
+    Args:
+        filename (str): name of the file to check.
+
+    Returns:
+        bool: True if file has a supported extension.
+
+    """
+    supported_extensions = ['html', 'htm', 'txt']
+
+    # some html files have unusal extensions (e.g. index.html#003Fs=3&d=2).
+    # We strip everything after the '#'
+    pos = filename.find('#')
+    if pos > 0:
+        filename = filename[0:pos]
+    for ext in supported_extensions:
+        if filename.endswith(f".{ext}"):
+            return True
+    return False
+
+
 def walk_and_index_all_files(input_files_root, index_name):
     """Walks the directory tree starting at base_dir, and ingests each html document that
     is encountered into an Elasticsearch index
@@ -62,18 +87,19 @@ def walk_and_index_all_files(input_files_root, index_name):
 
     for root, dirs, files in os.walk(input_files_root):
         for file in files:
-            if file.endswith(".html"):
+            if is_file_supported(file):
+                print(file + ' is supported.')
                 rel_dir = os.path.relpath(root, input_files_root)
                 relative_path_to_file = os.path.join(rel_dir, file)
                 print("indexing %s from %s" % (index_name, relative_path_to_file))
 
                 abs_file_path = os.path.join(input_files_root, relative_path_to_file)
-                infile = open(abs_file_path)
+                infile = open(abs_file_path, 'rb')
                 html_from_file = infile.read()
                 json_to_index = extract_fields_from_html(html_from_file)
                 json_to_index['relative_path_to_file'] = relative_path_to_file
                 es.index(index=index_name, id=None,
-                         body=json_to_index)
+                         document=json_to_index)
 
 
 def configure_index(index_name):
@@ -99,7 +125,7 @@ def configure_index(index_name):
             'settings': index_definitions.INDEX_SETTINGS,
             'mappings': index_definitions.INDEX_MAPPINGS
         }
-        es.indices.create(index=index_name, body=request_body)
+        es.indices.create(index=index_name, **request_body)
 
 
 def main():
